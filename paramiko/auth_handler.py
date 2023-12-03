@@ -234,38 +234,28 @@ class AuthHandler:
         return m.asbytes()
 
     def wait_for_response(self, event):
+        self._wait_until_event_or_timeout(event)
+        return self._process_auth_result()
+
+    def _wait_until_event_or_timeout(self, event):
         auth_timeout_timestamp = self._get_auth_timeout_timestamp()
-        while not self._is_event_set_or_transport_inactive(event):
+        while True:
+            event.wait(0.1)
+            if event.is_set() or not self.transport.is_active():
+                break
             self._check_for_auth_timeout(auth_timeout_timestamp)
 
-        return self._handle_authentication_result()
-
     def _get_auth_timeout_timestamp(self):
-        if self.transport.auth_timeout is not None:
-            return time.time() + self.transport.auth_timeout
-        return None
-
-    def _is_event_set_or_transport_inactive(self, event):
-        if not self.transport.is_active():
-            raise self._construct_transport_inactive_exception()
-        return event.is_set()
+        return time.time() + self.transport.auth_timeout if self.transport.auth_timeout is not None else None
 
     def _check_for_auth_timeout(self, timeout_timestamp):
-        if timeout_timestamp and timeout_timestamp <= time.time():
+        if timeout_timestamp and time.time() >= timeout_timestamp:
             raise AuthenticationException("Authentication timeout.")
 
-    def _construct_transport_inactive_exception(self):
-        exception = self.transport.get_exception()
-        if exception is None or issubclass(exception.__class__, EOFError):
-            return AuthenticationException("Authentication failed: transport shut down or saw EOF")
-        return exception
-
-    def _handle_authentication_result(self):
+    def _process_auth_result(self):
         if not self.is_authenticated():
-            exception = self.transport.get_exception()
-            if exception is None:
-                exception = AuthenticationException("Authentication failed.")
-            if issubclass(exception.__class__, PartialAuthentication):
+            exception = self.transport.get_exception() or AuthenticationException("Authentication failed.")
+            if isinstance(exception, PartialAuthentication):
                 return exception.allowed_types
             raise exception
         return []

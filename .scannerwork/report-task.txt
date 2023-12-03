@@ -2,5 +2,5 @@ projectKey=olgaratu_paramiko_AYwiLWJ9LMP3sf1tz4vZ
 serverUrl=https://e3a5-83-251-189-155.ngrok-free.app
 serverVersion=10.3.0.82913
 dashboardUrl=https://e3a5-83-251-189-155.ngrok-free.app/dashboard?id=olgaratu_paramiko_AYwiLWJ9LMP3sf1tz4vZ
-ceTaskId=AYwwuts8LMP3sf1tz4v8
-ceTaskUrl=https://e3a5-83-251-189-155.ngrok-free.app/api/ce/task?id=AYwwuts8LMP3sf1tz4v8
+ceTaskId=AYwwvmtqLMP3sf1tz4v9
+ceTaskUrl=https://e3a5-83-251-189-155.ngrok-free.app/api/ce/task?id=AYwwvmtqLMP3sf1tz4v9
