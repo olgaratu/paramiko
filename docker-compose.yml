@@ -1,0 +1,13 @@
+services:
+  sonar:
+    image: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+    command:
+      - sonar-scanner
+    environment:
+      SONAR_USER_HOME: ".sonar"
+      GIT_DEPTH: "0"
+      SONAR_HOST_URL: "https://e3a5-83-251-189-155.ngrok-free.app"
+      SONAR_TOKEN: "sqp_da87d59fb7d508c25d3d64fb62b197adafb2a8b7"
+    volumes:
+      - ./:/usr/src/

@@ -234,33 +234,40 @@ class AuthHandler:
         return m.asbytes()
 
     def wait_for_response(self, event):
-        max_ts = None
-        if self.transport.auth_timeout is not None:
-            max_ts = time.time() + self.transport.auth_timeout
-        while True:
-            event.wait(0.1)
-            if not self.transport.is_active():
-                e = self.transport.get_exception()
-                if (e is None) or issubclass(e.__class__, EOFError):
-                    e = AuthenticationException(
-                        "Authentication failed: transport shut down or saw EOF"
-                    )
-                raise e
-            if event.is_set():
-                break
-            if max_ts is not None and max_ts <= time.time():
-                raise AuthenticationException("Authentication timeout.")
+        auth_timeout_timestamp = self._get_auth_timeout_timestamp()
+        while not self._is_event_set_or_transport_inactive(event):
+            self._check_for_auth_timeout(auth_timeout_timestamp)
 
+        return self._handle_authentication_result()
+
+    def _get_auth_timeout_timestamp(self):
+        if self.transport.auth_timeout is not None:
+            return time.time() + self.transport.auth_timeout
+        return None
+
+    def _is_event_set_or_transport_inactive(self, event):
+        if not self.transport.is_active():
+            raise self._construct_transport_inactive_exception()
+        return event.is_set()
+
+    def _check_for_auth_timeout(self, timeout_timestamp):
+        if timeout_timestamp and timeout_timestamp <= time.time():
+            raise AuthenticationException("Authentication timeout.")
+
+    def _construct_transport_inactive_exception(self):
+        exception = self.transport.get_exception()
+        if exception is None or issubclass(exception.__class__, EOFError):
+            return AuthenticationException("Authentication failed: transport shut down or saw EOF")
+        return exception
+
+    def _handle_authentication_result(self):
         if not self.is_authenticated():
-            e = self.transport.get_exception()
-            if e is None:
-                e = AuthenticationException("Authentication failed.")
-            # this is horrible.  Python Exception isn't yet descended from
-            # object, so type(e) won't work. :(
-            # TODO 4.0: lol. just lmao.
-            if issubclass(e.__class__, PartialAuthentication):
-                return e.allowed_types
-            raise e
+            exception = self.transport.get_exception()
+            if exception is None:
+                exception = AuthenticationException("Authentication failed.")
+            if issubclass(exception.__class__, PartialAuthentication):
+                return exception.allowed_types
+            raise exception
         return []
 
     def _parse_service_request(self, m):
@@ -611,9 +618,6 @@ Error Message: {}
                 )
         elif method == "publickey":
             sig_attached = m.get_boolean()
-            # NOTE: server never wants to guess a client's algo, they're
-            # telling us directly. No need for _finalize_pubkey_algorithm
-            # anywhere in this flow.
             algorithm = m.get_text()
             keyblob = m.get_binary()
             try:
@@ -661,12 +665,7 @@ Error Message: {}
                 return
         elif method == "gssapi-with-mic" and gss_auth:
             sshgss = GSSAuth(method)
-            # Read the number of OID mechanisms supported by the client.
-            # OpenSSH sends just one OID. It's the Kerveros V5 OID and that's
-            # the only OID we support.
             mechs = m.get_int()
-            # We can't accept more than one OID, so if the SSH client sends
-            # more than one, disconnect.
             if mechs > 1:
                 self._log(
                     INFO,
@@ -684,8 +683,6 @@ Error Message: {}
                 self._disconnect_no_more_auth()
             # send the Kerberos V5 GSSAPI OID to the client
             supported_mech = sshgss.ssh_gss_oids("server")
-            # RFC 4462 says we are not required to implement GSS-API error
-            # messages. See section 3.8 in http://www.ietf.org/rfc/rfc4462.txt
             m = Message()
             m.add_byte(cMSG_USERAUTH_GSSAPI_RESPONSE)
             m.add_bytes(supported_mech)
