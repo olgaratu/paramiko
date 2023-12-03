@@ -234,30 +234,33 @@ class AuthHandler:
         return m.asbytes()
 
     def wait_for_response(self, event):
-        self._wait_until_event_or_timeout(event)
-        return self._process_auth_result()
-
-    def _wait_until_event_or_timeout(self, event):
-        auth_timeout_timestamp = self._get_auth_timeout_timestamp()
+        max_ts = None
+        if self.transport.auth_timeout is not None:
+            max_ts = time.time() + self.transport.auth_timeout
         while True:
             event.wait(0.1)
-            if event.is_set() or not self.transport.is_active():
+            if not self.transport.is_active():
+                e = self.transport.get_exception()
+                if (e is None) or issubclass(e.__class__, EOFError):
+                    e = AuthenticationException(
+                        "Authentication failed: transport shut down or saw EOF"
+                    )
+                raise e
+            if event.is_set():
                 break
-            self._check_for_auth_timeout(auth_timeout_timestamp)
+            if max_ts is not None and max_ts <= time.time():
+                raise AuthenticationException("Authentication timeout.")
 
-    def _get_auth_timeout_timestamp(self):
-        return time.time() + self.transport.auth_timeout if self.transport.auth_timeout is not None else None
-
-    def _check_for_auth_timeout(self, timeout_timestamp):
-        if timeout_timestamp and time.time() >= timeout_timestamp:
-            raise AuthenticationException("Authentication timeout.")
-
-    def _process_auth_result(self):
         if not self.is_authenticated():
-            exception = self.transport.get_exception() or AuthenticationException("Authentication failed.")
-            if isinstance(exception, PartialAuthentication):
-                return exception.allowed_types
-            raise exception
+            e = self.transport.get_exception()
+            if e is None:
+                e = AuthenticationException("Authentication failed.")
+            # this is horrible.  Python Exception isn't yet descended from
+            # object, so type(e) won't work. :(
+            # TODO 4.0: lol. just lmao.
+            if issubclass(e.__class__, PartialAuthentication):
+                return e.allowed_types
+            raise e
         return []
 
     def _parse_service_request(self, m):
